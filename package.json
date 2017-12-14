@@ -1,0 +1,17 @@
+{
+    "name": "webextension-common",
+    "description": "description",
+    "authors": "Chad Meadows",
+    "version": "1.0.0",
+    "main": "src/WebExtension",
+    "scripts": {
+        "build-watch": "node fuse.js"
+    },
+    "dependencies": {
+        "webextension-polyfill": "^0.2.1"
+    },
+    "devDependencies": {
+        "web-ext-types": "github:michael-zapata/web-ext-types",
+        "typescript": "^2.6.2"
+    }
+}
