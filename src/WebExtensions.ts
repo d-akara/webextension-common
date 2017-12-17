@@ -1,5 +1,16 @@
+import { EventSource } from './WebExtensions';
 // future use
 //browser.tabs.executeScript(tab.id, {code:"document.body.appendChild(document.createElement('script')).src = 'url';"})
+
+export enum Key {
+    Shift   = "Shift",
+    Space   = "Space",
+    Tab     = "Tab",
+    Control = "Control",
+    Alt     = "Alt",
+    Meta    = "Meta",
+    Enter   = "Enter"
+}
 
 export type EventSource = {
     tabId: number,
@@ -44,4 +55,38 @@ export function createWindow(url:string) {
 
 export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
     browser.webNavigation.onDOMContentLoaded.addListener(onContentLoaded)
+}
+
+export function doubleTapKeyEventListener(key:Key, onDoubleTap:Function) {
+    let lastKeyEvent:KeyboardEvent = new KeyboardEvent('keydown', {key});
+    let lastKeyEventTime;
+    document.addEventListener('keydown', event =>{
+        if (event.key === key && lastKeyEvent.key === event.key) {
+            const keydownTime = performance.now();
+            if (keydownTime - lastKeyEventTime < 400) {
+                lastKeyEventTime = 0;
+                event.preventDefault()
+                event.stopPropagation()
+                onDoubleTap();
+            } else
+                lastKeyEventTime = keydownTime;
+        }
+        lastKeyEvent = event;
+    },{capture:true});
+}
+
+export function keyEventListener(key:Key, onDoubleTap:Function) {
+    let lastKeyEvent:KeyboardEvent = new KeyboardEvent('keydown', {key});
+    let lastKeyEventTime;
+    window.addEventListener('keydown', event =>{
+        if (event.key === key && lastKeyEvent.key === event.key) {
+            const keydownTime = performance.now();
+            if (keydownTime - lastKeyEventTime < 400) {
+
+                onDoubleTap();
+            }
+            lastKeyEventTime = keydownTime;
+        }
+        lastKeyEvent = event;
+    }, );
 }
