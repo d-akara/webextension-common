@@ -2,7 +2,7 @@ import { EventSource } from './WebExtensions';
 // future use
 //browser.tabs.executeScript(tab.id, {code:"document.body.appendChild(document.createElement('script')).src = 'url';"})
 
-export enum Key {
+export enum KeySpecial {
     Shift   = "Shift",
     Space   = "Space",
     Tab     = "Tab",
@@ -11,6 +11,8 @@ export enum Key {
     Meta    = "Meta",
     Enter   = "Enter"
 }
+
+type Key = KeySpecial | string
 
 export type EventSource = {
     tabId: number,
@@ -56,37 +58,53 @@ export function createWindow(url:string) {
 export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
     browser.webNavigation.onDOMContentLoaded.addListener(onContentLoaded)
 }
+// sequence mode toggle
+// after sequence handle all keys until escape mode
 
-export function doubleTapKeyEventListener(key:Key, onDoubleTap:Function) {
-    let lastKeyEvent:KeyboardEvent = new KeyboardEvent('keydown', {key});
-    let lastKeyEventTime;
+
+
+export function keySequenceEventListener(keys:Key[], onSequence:Function) {
+    let sequencePosition = 0;
+    let lastKeyEventTime = 0;
     document.addEventListener('keydown', event =>{
-        if (event.key === key && lastKeyEvent.key === event.key) {
-            const keydownTime = performance.now();
-            if (keydownTime - lastKeyEventTime < 400) {
-                lastKeyEventTime = 0;
-                event.preventDefault()
-                event.stopPropagation()
-                onDoubleTap();
-            } else
-                lastKeyEventTime = keydownTime;
+        const keydownTime = performance.now();
+        if ((lastKeyEventTime > 0) && (keydownTime - lastKeyEventTime > 400)) {
+            // time expired to consider key strokes part of same sequence
+            // reset sequence pointer to the beginning
+            sequencePosition = 0;
         }
-        lastKeyEvent = event;
+        lastKeyEventTime = keydownTime;
+
+        if (event.key === keys[sequencePosition]) {
+            sequencePosition++;
+            event.preventDefault()
+            event.stopPropagation()
+            if (sequencePosition === keys.length) {
+                sequencePosition = 0;
+                lastKeyEventTime = 0;
+                onSequence();
+            }
+        } else {
+            sequencePosition = 0;
+            lastKeyEventTime = 0;
+        }
     },{capture:true});
 }
 
-export function keyEventListener(key:Key, onDoubleTap:Function) {
-    let lastKeyEvent:KeyboardEvent = new KeyboardEvent('keydown', {key});
-    let lastKeyEventTime;
+function allKeysDown(queryKeys:[Key], keysDown:Set<Key>) {
+    return queryKeys.every(key=>keysDown.has(key))
+}
+export function keyChordEventListener(keys:[Key], onAllKeys:Function) {
+    const keysDown = new Set()
     window.addEventListener('keydown', event =>{
-        if (event.key === key && lastKeyEvent.key === event.key) {
-            const keydownTime = performance.now();
-            if (keydownTime - lastKeyEventTime < 400) {
-
-                onDoubleTap();
-            }
-            lastKeyEventTime = keydownTime;
+        keysDown.add(event.key)
+        if (allKeysDown(keys, keysDown)) {
+            onAllKeys();
+            
         }
-        lastKeyEvent = event;
-    }, );
+    }, {capture:true});
+
+    window.addEventListener('keyup', event =>{
+        keysDown.delete(event.key)
+    }, {capture:true});
 }
