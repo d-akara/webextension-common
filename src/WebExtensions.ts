@@ -61,7 +61,13 @@ export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
 // sequence mode toggle
 // after sequence handle all keys until escape mode
 
-
+export function textNodesTransform(fnTransform: (constent:string)=>string) {
+    const walk = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_TEXT, null, false);
+    let node:Text;
+    while(node = walk.nextNode() as Text){
+        node.textContent = fnTransform(node.textContent);
+    }
+}
 
 export function keySequenceEventListener(keys:Key[], onSequence:Function) {
     let sequencePosition = 0;
@@ -100,7 +106,6 @@ export function keyChordEventListener(keys:[Key], onAllKeys:Function) {
         keysDown.add(event.key)
         if (allKeysDown(keys, keysDown)) {
             onAllKeys();
-            
         }
     }, {capture:true});
 
