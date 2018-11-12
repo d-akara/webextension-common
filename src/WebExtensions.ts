@@ -47,6 +47,10 @@ export function subscribeMessages(event:string, onMessage:(message:ExtensionMess
     });
 }
 
+/**
+ * Performs action when key command is invoked as described in the manifest.json
+ * @param command 
+ */
 export function subscribeKeyCommandEvents(command:(command:string)=>void) {
     browser.commands.onCommand.addListener(command);
 }
@@ -83,7 +87,8 @@ export function keySequenceEventListener(keys:Key[], onSequence:Function) {
 
         if (event.key === keys[sequencePosition]) {
             sequencePosition++;
-            event.preventDefault()
+            // TODO prevent default after start sequence
+            //event.preventDefault()
             event.stopPropagation()
             if (sequencePosition === keys.length) {
                 sequencePosition = 0;
@@ -97,14 +102,18 @@ export function keySequenceEventListener(keys:Key[], onSequence:Function) {
     },{capture:true});
 }
 
-function allKeysDown(queryKeys:[Key], keysDown:Set<Key>) {
+function allKeysDown(queryKeys:Key[], keysDown:Set<Key>) {
     return queryKeys.every(key=>keysDown.has(key))
 }
-export function keyChordEventListener(keys:[Key], onAllKeys:Function) {
+export function keyChordEventListener(keys:Key[], onAllKeys:Function) {
     const keysDown = new Set()
     window.addEventListener('keydown', event =>{
         keysDown.add(event.key)
         if (allKeysDown(keys, keysDown)) {
+            // prevent default key handling when combination is pressed.
+            // this is prevent characters printing like shift+enter combinations
+            event.preventDefault()
+            event.stopPropagation()
             onAllKeys();
         }
     }, {capture:true});
