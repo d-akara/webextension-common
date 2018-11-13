@@ -122,3 +122,33 @@ export function keyChordEventListener(keys:Key[], onAllKeys:Function) {
         keysDown.delete(event.key)
     }, {capture:true});
 }
+
+export interface LoggerMessage {
+    loggerId:string,
+    messages:object[]
+}
+
+export function makeLogger(loggerId:string) {
+    const isBackground = window.document.URL.endsWith('_generated_background_page.html')
+    if (isBackground) {
+        return {
+            log: (...messages) => {
+                console.log.apply(this, [loggerId + ':', ...messages])
+            }
+        }
+    }
+    return {
+        log: (...messages) => {
+            const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}}
+            if (browser.tabs) sendMessageActiveTab(extensionMessage)
+            sendMessage(extensionMessage)
+        }
+    }
+}
+
+export function makeLogReceiver() {
+    subscribeMessages('webextension.logger', event => {
+        const content = event.content as LoggerMessage
+        console.log.apply(null, [content.loggerId + ':', ...content.messages])
+    })
+}
