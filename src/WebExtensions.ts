@@ -1,6 +1,31 @@
 import { EventSource } from './WebExtensions';
-// future use
-//browser.tabs.executeScript(tab.id, {code:"document.body.appendChild(document.createElement('script')).src = 'url';"})
+
+/*
+ * Content scripts don't have access to the page script state or objects
+ * However, we can inject a script that would use postMessage to send our extension information from the page script state
+ * 
+ * browser.tabs.executeScript(null, {code: "document.body.appendChild(document.createElement('script')).src='" + browser.runtime.getURL("pageInspector.js") +"';" }, null);
+ * browser.tabs.executeScript(null, {file: "/path/to/file.js"})
+ *
+ * 
+ * permission to send message from page script
+ * "externally_connectable": {"matches": ["*://*.example.com/*"]}
+ * permission to inject a local script
+ * "web_accessible_resources": ["pageInspector.js"]
+ * 
+ */
+
+/**
+ * API's available to content scripts - https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Content_scripts#WebExtension_APIs
+ */
+
+ /**
+  * Example native messaging - https://medium.com/@joaoguedes.ishida/send-data-from-a-firefox-web-extension-to-a-python-script-and-create-a-simple-playlisting-app-for-a9436ac84624
+  * 
+  * Page script to background script messaging - https://developer.chrome.com/extensions/messaging#external-webpage
+  * Page script to content script messaging - http://krasimirtsonev.com/blog/article/Send-message-from-web-page-to-chrome-extensions-background-script
+  * 
+  */
 
 export enum KeySpecial {
     Shift   = "Shift",
@@ -140,13 +165,12 @@ export function makeLogger(loggerId:string) {
     return {
         log: (...messages) => {
             const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}}
-            if (browser.tabs) sendMessageActiveTab(extensionMessage)
             sendMessage(extensionMessage)
         }
     }
 }
 
-export function makeLogReceiver() {
+export function makeBackgroundLogReceiver() {
     subscribeMessages('webextension.logger', event => {
         const content = event.content as LoggerMessage
         console.log.apply(null, [content.loggerId + ':', ...content.messages])
