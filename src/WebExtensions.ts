@@ -72,6 +72,18 @@ export function subscribeMessages(event:string, onMessage:(message:ExtensionMess
     });
 }
 
+
+interface actionEvent {
+    tab: browser.tabs.Tab
+    action: typeof browser.browserAction
+}
+
+export function onBrowserAction(onAction: (action:actionEvent) => void) {
+    browser.browserAction.onClicked.addListener(tab => {
+        onAction({tab, action: browser.browserAction})
+    })
+}
+
 /**
  * Performs action when key command is invoked as described in the manifest.json
  * @param command 
@@ -175,4 +187,14 @@ export function makeBackgroundLogReceiver() {
         const content = event.content as LoggerMessage
         console.log.apply(null, [content.loggerId + ':', ...content.messages])
     })
+}
+
+export namespace devtools {
+    export function createPanel(name, icon, html) {
+        browser.devtools.panels.create(name, icon, html)
+        .then((newPanel) => {
+            // newPanel.onShown.addListener(initialisePanel);
+            // newPanel.onHidden.addListener(unInitialisePanel);
+          });
+    }
 }
