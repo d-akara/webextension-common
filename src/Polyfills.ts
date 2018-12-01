@@ -10,3 +10,5 @@ declare var window:Window;
 window['browser'] =  window.msBrowser || window.browser || window.chrome;
 
 console.log('webextension-polyfill: polyfills installed', polyfill);  // note. we must reference polyfill or it will not be imported and included
+
+export const INCLUDE="" // without something concrete, this file will not be included in the JS output when doing export *

@@ -3,15 +3,15 @@
     "description": "description",
     "authors": "Chad Meadows",
     "version": "1.0.0",
-    "main": "src/WebExtension",
+    "main": "dist",
     "scripts": {
         "build-watch": "node fuse.js"
     },
     "dependencies": {
-        "webextension-polyfill": "^0.2.1"
+        "webextension-polyfill": "^0.3.1"
     },
     "devDependencies": {
         "web-ext-types": "github:michael-zapata/web-ext-types",
-        "typescript": "^2.6.2"
+        "typescript": "^3.1.6"
     }
 }
