@@ -8,7 +8,8 @@
         "build-watch": "node fuse.js"
     },
     "dependencies": {
-        "webextension-polyfill": "^0.3.1"
+        "webextension-polyfill": "^0.3.1",
+        "ext-messenger": "^3.0.1"
     },
     "devDependencies": {
         "web-ext-types": "github:michael-zapata/web-ext-types",

@@ -2,9 +2,9 @@
     "compilerOptions": {
         "module": "esnext",
         "outDir": "dist",
-        "sourceRoot": ".",
         "target": "esnext",
         "moduleResolution": "node",
-        "typeRoots": ["node_modules/@types", "node_modules/web-ext-types"]
+        "typeRoots": ["node_modules/@types", "node_modules/web-ext-types"],
+        "declaration": true
     }
 }

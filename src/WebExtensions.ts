@@ -1,4 +1,5 @@
-import { EventSource } from './WebExtensions';
+import { LoggerMessage } from './WebExtensions';
+import * as Messenger from 'ext-messenger'
 
 /*
  * Content scripts don't have access to the page script state or objects
@@ -37,7 +38,7 @@ export enum KeySpecial {
     Enter   = "Enter"
 }
 
-type Key = KeySpecial | string
+export type Key = KeySpecial | string
 
 export type EventSource = {
     tabId: number,
@@ -46,10 +47,18 @@ export type EventSource = {
     frameId: number,
     timeStamp: number
 }
-interface ExtensionMessage {
+export interface ExtensionMessage {
     event:string,
     content?:Object
 }
+
+export namespace background {
+    export function startMessageBus() {
+        const messenger = new Messenger();
+        messenger.initBackgroundHub();
+    }
+}
+
 export function sendMessageActiveTab(message:ExtensionMessage) {
     return browser.tabs.query({ active: true, windowType:'normal' }).then((tabs) => {
         return browser.tabs.sendMessage(tabs[0].id, message)
@@ -72,8 +81,15 @@ export function subscribeMessages(event:string, onMessage:(message:ExtensionMess
     });
 }
 
+export function createMessageBusConnection(channel:string, messageHandler: Function) {
+    const messenger = new Messenger();
+    const connection = messenger.initConnection(channel, messageHandler);
+    return {
+        sendMessage: (target: 'background' | 'devtool' | 'content_script' | 'popup', channel:string, message: any) => connection.sendMessage(target + ':' + channel, message)
+    }
+}
 
-interface actionEvent {
+export interface actionEvent {
     tab: browser.tabs.Tab
     action: typeof browser.browserAction
 }
