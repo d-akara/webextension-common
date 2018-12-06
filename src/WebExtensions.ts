@@ -1,5 +1,4 @@
 import { LoggerMessage } from './WebExtensions';
-import * as Messenger from 'ext-messenger'
 
 /*
  * Content scripts don't have access to the page script state or objects
@@ -53,9 +52,11 @@ export interface ExtensionMessage {
 }
 
 export namespace background {
-    export function startMessageBus() {
-        const messenger = new Messenger();
-        messenger.initBackgroundHub();
+    export function makeBackgroundLogReceiver() {
+        subscribeMessages('webextension.logger', event => {
+            const content = event.content as LoggerMessage
+            console.log.apply(null, [content.loggerId + ':', ...content.messages])
+        })
     }
 }
 
@@ -79,14 +80,6 @@ export function subscribeMessages(event:string, onMessage:(message:ExtensionMess
            return new Promise(resolve=>resolve(reply));
         }
     });
-}
-
-export function createMessageBusConnection(channel:string, messageHandler: Function) {
-    const messenger = new Messenger();
-    const connection = messenger.initConnection(channel, messageHandler);
-    return {
-        sendMessage: (target: 'background' | 'devtool' | 'content_script' | 'popup', channel:string, message: any) => connection.sendMessage(target + ':' + channel, message)
-    }
 }
 
 export interface actionEvent {
@@ -196,13 +189,6 @@ export function makeLogger(loggerId:string) {
             sendMessage(extensionMessage)
         }
     }
-}
-
-export function makeBackgroundLogReceiver() {
-    subscribeMessages('webextension.logger', event => {
-        const content = event.content as LoggerMessage
-        console.log.apply(null, [content.loggerId + ':', ...content.messages])
-    })
 }
 
 export namespace devtools {
