@@ -66,7 +66,36 @@ export function sendMessageActiveTab(message:ExtensionMessage) {
     });
 }
 
-export function sendMessage(message:ExtensionMessage) {
+export interface TabQuery {
+    active?: boolean,
+    audible?: boolean,
+    cookieStoreId?: string,
+    currentWindow?: boolean,
+    discarded?: boolean,
+    highlighted?: boolean,
+    index?: number,
+    muted?: boolean,
+    lastFocusedWindow?: boolean,
+    pinned?: boolean,
+    status?: browser.tabs.TabStatus,
+    title?: string,
+    url?: string|string[],
+    windowId?: number,
+    windowType?: browser.tabs.WindowType
+}
+
+export function sendMessageTabs(tabQuery: TabQuery, message:ExtensionMessage) {
+    return browser.tabs.query(tabQuery).then((tabs) => {
+        const messagePromises = []
+        for (const tab of tabs) {
+            messagePromises.push(browser.tabs.sendMessage(tab.id, message))
+        }
+
+        return Promise.all(messagePromises)
+    });
+}
+
+export function sendMessageExtensionPages(message:ExtensionMessage) {
     return browser.runtime.sendMessage(message)
 }
 
@@ -186,7 +215,7 @@ export function makeLogger(loggerId:string) {
     return {
         log: (...messages) => {
             const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}}
-            sendMessage(extensionMessage)
+            sendMessageExtensionPages(extensionMessage)
         }
     }
 }
