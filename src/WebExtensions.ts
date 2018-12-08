@@ -51,6 +51,11 @@ export interface ExtensionMessage {
     content?:Object
 }
 
+export interface ExtensionMessageResponse {
+    tabId?:number,
+    content?:Object
+}
+
 export namespace background {
     export function makeBackgroundLogReceiver() {
         subscribeMessages('webextension.logger', event => {
@@ -85,13 +90,17 @@ export interface TabQuery {
 }
 
 export function sendMessageTabs(tabQuery: TabQuery, message:ExtensionMessage) {
-    return browser.tabs.query(tabQuery).then((tabs) => {
+    return browser.tabs.query(tabQuery).then(async tabs => {
         const messagePromises = []
         for (const tab of tabs) {
             messagePromises.push(browser.tabs.sendMessage(tab.id, message))
         }
-
-        return Promise.all(messagePromises)
+        const results = await Promise.all(messagePromises.map(p => p.catch(e => e)));
+        const response = [] as ExtensionMessageResponse[]
+        for (const result of results) {
+            response.push({content:result})
+        }
+        return response
     });
 }
 
