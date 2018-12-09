@@ -1,5 +1,3 @@
-import { LoggerMessage } from './WebExtensions';
-
 /*
  * Content scripts don't have access to the page script state or objects
  * However, we can inject a script that would use postMessage to send our extension information from the page script state
@@ -78,26 +76,48 @@ namespace memoryStorage {
         }
         return sendMessageExtensionPages({event: 'webextension.store.setValue', content: item})
     }
-    export function memGet(keys?: string|string[]|null) {
-        if (isBackground()) return valueStore.get(keys)
+    export function memGet(keys?: string|string[]|null): Promise<any> | string | string[] {
+        if (isBackground()) {
+            if (keys instanceof String)
+                return valueStore.get(keys)
+            else {
+                const values = []
+                for (const key of keys) {
+                    values.push(valueStore.get(key))
+                }
+                return values
+            }
+        }
         return sendMessageExtensionPages({event: 'webextension.store.getValue', content: keys})
     }
 }
 
 export namespace background {
-    export function makeBackgroundLogReceiver() {
+    export function startLogReceiver() {
         subscribeMessages('webextension.logger', event => {
             const content = event.content as LoggerMessage
             console.log.apply(null, [content.loggerId + ':', ...content.messages])
         })
     }
+    export function startMessageProxy() {
+        subscribeMessages('webextension.proxy.sendMessageActiveTab', event => {
+            return _sendMessageActiveTab(event.content as any)
+        })
+    }
     export const startMemoryStorage = memoryStorage.startMemoryStorage
 }
 
-export function sendMessageActiveTab(message:ExtensionMessage) {
+function _sendMessageActiveTab(message:ExtensionMessage) {
     return browser.tabs.query({ active: true, windowType:'normal' }).then((tabs) => {
         return browser.tabs.sendMessage(tabs[0].id, message)
     });
+}
+
+export function sendMessageActiveTab(message:ExtensionMessage) {
+    if (isDevtools()) {  // devtools in firefox doesn't have access to tabs, so we must proxy through the background
+        return sendMessageExtensionPages({event:'webextension.proxy.sendMessageActiveTab', content: message})
+    } else
+        return _sendMessageActiveTab(message)
 }
 
 export interface TabQuery {
@@ -239,8 +259,7 @@ export interface LoggerMessage {
 }
 
 export function makeLogger(loggerId:string) {
-    const isBackground = window.document.URL.endsWith('_generated_background_page.html')
-    if (isBackground) {
+    if (isBackground()) {
         return {
             log: (...messages) => {
                 console.log.apply(this, [loggerId + ':', ...messages])
@@ -257,11 +276,7 @@ export function makeLogger(loggerId:string) {
 
 export namespace devtools {
     export function createPanel(name, icon, html) {
-        browser.devtools.panels.create(name, icon, html)
-        .then((newPanel) => {
-            // newPanel.onShown.addListener(initialisePanel);
-            // newPanel.onHidden.addListener(unInitialisePanel);
-          });
+        return browser.devtools.panels.create(name, icon, html)
     }
 }
 
@@ -286,3 +301,5 @@ function isBackground() {
     if (!browser.extension.getBackgroundPage) return false // occurs in content script
     return browser.extension.getBackgroundPage() === window
 }
+
+function isDevtools() {return browser.devtools ? true:false}
