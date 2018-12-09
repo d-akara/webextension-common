@@ -52,8 +52,36 @@ export interface ExtensionMessage {
 }
 
 export interface ExtensionMessageResponse {
-    tabId?:number,
-    content?:Object
+    tab?:browser.tabs.Tab,
+    content?:Object,
+    isError:boolean
+}
+
+namespace memoryStorage {
+    const valueStore = new Map()
+    export function startMemoryStorage() {
+        subscribeMessages('webextension.store.setValue', event => {
+            for (const key in event.content) {
+                valueStore.set(key, event.content[key])
+            }
+        })
+        subscribeMessages('webextension.store.getValue', event => {
+            return valueStore.get(event.content)
+        })
+    }
+    export function memSet(item: browser.storage.StorageObject) {
+        if (isBackground()) {
+            for (const key in item) {
+                valueStore.set(key, item[key])
+            }
+            return
+        }
+        return sendMessageExtensionPages({event: 'webextension.store.setValue', content: item})
+    }
+    export function memGet(keys?: string|string[]|null) {
+        if (isBackground()) return valueStore.get(keys)
+        return sendMessageExtensionPages({event: 'webextension.store.getValue', content: keys})
+    }
 }
 
 export namespace background {
@@ -63,6 +91,7 @@ export namespace background {
             console.log.apply(null, [content.loggerId + ':', ...content.messages])
         })
     }
+    export const startMemoryStorage = memoryStorage.startMemoryStorage
 }
 
 export function sendMessageActiveTab(message:ExtensionMessage) {
@@ -89,19 +118,16 @@ export interface TabQuery {
     windowType?: browser.tabs.WindowType
 }
 
-export function sendMessageTabs(tabQuery: TabQuery, message:ExtensionMessage) {
-    return browser.tabs.query(tabQuery).then(async tabs => {
-        const messagePromises = []
-        for (const tab of tabs) {
-            messagePromises.push(browser.tabs.sendMessage(tab.id, message))
-        }
-        const results = await Promise.all(messagePromises.map(p => p.catch(e => e)));
-        const response = [] as ExtensionMessageResponse[]
-        for (const result of results) {
-            response.push({content:result})
-        }
-        return response
-    });
+export async function sendMessageTabs(tabQuery: TabQuery, message:ExtensionMessage) {
+    const tabs = await browser.tabs.query(tabQuery)
+    const response = [] as ExtensionMessageResponse[]
+    for (const tab of tabs) {
+        let isError = false
+        const tabResult = await browser.tabs.sendMessage(tab.id, message).catch(e=> {isError = true; return e})
+        response.push({tab, content:tabResult, isError})
+    }
+    return response
+    
 }
 
 export function sendMessageExtensionPages(message:ExtensionMessage) {
@@ -109,7 +135,7 @@ export function sendMessageExtensionPages(message:ExtensionMessage) {
 }
 
 export function subscribeMessages(event:string, onMessage:(message:ExtensionMessage, sender:browser.runtime.MessageSender)=>any) {
-    browser.runtime.onMessage.addListener((eMessage, eSender, eCallback)=>{
+    browser.runtime.onMessage.addListener((eMessage, eSender)=>{
        if (eMessage.event === event) {
            const reply = onMessage(eMessage, eSender);
            // if promise, return
@@ -237,4 +263,26 @@ export namespace devtools {
             // newPanel.onHidden.addListener(unInitialisePanel);
           });
     }
+}
+
+export namespace storage {
+    export function localSet(item: browser.storage.StorageObject) {
+        return browser.storage.local.set(item)
+    }
+    export function localGet(keys?: string|string[]|null) {
+        return browser.storage.local.get(keys)
+    }
+    export function syncSet(item: browser.storage.StorageObject) {
+        return browser.storage.sync.set(item)
+    }
+    export function syncGet(keys?: string|string[]|null) {
+        return browser.storage.sync.get(keys)
+    }
+    export const memSet = memoryStorage.memSet
+    export const memGet = memoryStorage.memGet
+}
+
+function isBackground() {
+    if (!browser.extension.getBackgroundPage) return false // occurs in content script
+    return browser.extension.getBackgroundPage() === window
 }
