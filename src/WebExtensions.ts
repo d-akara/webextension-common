@@ -72,20 +72,20 @@ namespace memoryStorage {
             for (const key in item) {
                 valueStore.set(key, item[key])
             }
-            return
+            return Promise.resolve()
         }
         return sendMessageExtensionPages({event: 'webextension.store.setValue', content: item})
     }
-    export function memGet(keys?: string|string[]|null): Promise<any> | string | string[] {
+    export function memGet(keys?: string|string[]|null): Promise<any> {
         if (isBackground()) {
             if (keys instanceof String)
-                return valueStore.get(keys)
+                return Promise.resolve(valueStore.get(keys))
             else {
                 const values = []
                 for (const key of keys) {
                     values.push(valueStore.get(key))
                 }
-                return values
+                return Promise.resolve(values)
             }
         }
         return sendMessageExtensionPages({event: 'webextension.store.getValue', content: keys})
@@ -101,7 +101,8 @@ export namespace background {
     }
     export function startMessageProxy() {
         subscribeMessages('webextension.proxy.sendMessageActiveTab', event => {
-            return _sendMessageActiveTab(event.content as any)
+            const content = event.content as any
+            return browser.tabs.sendMessage(content.tabId, content.message)
         })
     }
     export const startMemoryStorage = memoryStorage.startMemoryStorage
@@ -115,7 +116,7 @@ function _sendMessageActiveTab(message:ExtensionMessage) {
 
 export function sendMessageActiveTab(message:ExtensionMessage) {
     if (isDevtools()) {  // devtools in firefox doesn't have access to tabs, so we must proxy through the background
-        return sendMessageExtensionPages({event:'webextension.proxy.sendMessageActiveTab', content: message})
+        return sendMessageExtensionPages({event:'webextension.proxy.sendMessageActiveTab', content: {tabId: browser.devtools.inspectedWindow.tabId, message}})
     } else
         return _sendMessageActiveTab(message)
 }
