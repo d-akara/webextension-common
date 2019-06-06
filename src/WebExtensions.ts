@@ -172,6 +172,10 @@ export interface actionEvent {
     action: typeof browser.browserAction
 }
 
+/**
+ * Handle browser toolbar click
+ * @param onAction 
+ */
 export function onBrowserAction(onAction: (action:actionEvent) => void) {
     browser.browserAction.onClicked.addListener(tab => {
         onAction({tab, action: browser.browserAction})
@@ -193,6 +197,7 @@ export function createWindow(url:string) {
 export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
     browser.webNavigation.onDOMContentLoaded.addListener(onContentLoaded)
 }
+
 // sequence mode toggle
 // after sequence handle all keys until escape mode
 
@@ -237,7 +242,7 @@ function allKeysDown(queryKeys:Key[], keysDown:Set<Key>) {
     return queryKeys.every(key=>keysDown.has(key))
 }
 export function keyChordEventListener(keys:Key[], onAllKeys:Function) {
-    const keysDown = new Set()
+    const keysDown = new Set<Key>()
     window.addEventListener('keydown', event =>{
         keysDown.add(event.key)
         if (allKeysDown(keys, keysDown)) {
@@ -278,6 +283,64 @@ export function makeLogger(loggerId:string) {
 export namespace devtools {
     export function createPanel(name, icon, html) {
         return browser.devtools.panels.create(name, icon, html)
+    }
+}
+
+export namespace content {
+
+    function observer(targetNode, observeFn: (mutation:MutationRecord) => boolean | void) {
+        const config = {
+            attributes: true,
+            attributeOldValue: true,
+            characterData: true,
+            characterDataOldValue: true,
+            childList: true,
+            subtree: true
+          };
+
+        const observer = new MutationObserver(mutationList => {
+            for(const mutation of mutationList) {
+                if (observeFn(mutation)) {
+                    observer.disconnect()
+                    break;
+                }
+            }
+        });
+
+        observer.observe(targetNode, config);
+    }
+
+    export function executeFile(filePath:string) {
+        const url = browser.runtime.getURL(filePath)
+        const scriptTag = document.createElement("script");
+        scriptTag.src = url;
+        scriptTag.type = "text/javascript";
+
+        if (!document.head) {
+            observer(document, mutation => {
+                if (mutation.target.nodeName === 'HEAD') {
+                    mutation.target.appendChild(scriptTag)
+                    return true // end listening
+                }
+            })
+        }
+        return document.head.appendChild(scriptTag);
+    }
+
+    export function executeScript(scriptContent:string) {
+        const scriptTag = document.createElement("script");
+        scriptTag.type = "text/javascript";
+        scriptTag.textContent = scriptContent
+
+        // TODO extract common function with executeFile
+        if (!document.head) {
+            observer(document, mutation => {
+                if (mutation.target.nodeName === 'HEAD') {
+                    mutation.target.appendChild(scriptTag)
+                }
+            })
+        }
+        return document.head.appendChild(scriptTag);
     }
 }
 
