@@ -288,26 +288,42 @@ export namespace devtools {
 
 export namespace content {
 
-    function observer(targetNode, observeFn: (mutation:MutationRecord) => boolean | void) {
-        const config = {
+    export function observe(targetNode, listenerFn: (mutation:MutationRecord) => boolean | void, observerConfig?: MutationObserverInit) {
+        const config = observerConfig || {
             attributes: true,
             attributeOldValue: true,
             characterData: true,
             characterDataOldValue: true,
             childList: true,
             subtree: true
-          };
+        };
 
         const observer = new MutationObserver(mutationList => {
             for(const mutation of mutationList) {
-                if (observeFn(mutation)) {
+                if (listenerFn(mutation)) {
                     observer.disconnect()
+                    console.log('disconnected observer')
                     break;
                 }
             }
         });
 
         observer.observe(targetNode, config);
+    }
+
+    const documentInterceptors = []
+    export function interceptDocumentLoad(onDocumentLoad: (html:Element)=>void) {
+        documentInterceptors.push(onDocumentLoad)
+
+        if (documentInterceptors.length > 1) return // we are done, listener has already been created from previous call
+
+        const originalHtml = document.replaceChild(document.createElement("html"), document.children[0]);
+        document.addEventListener('DOMContentLoaded', event => {
+            for (const interceptor of documentInterceptors) {
+                interceptor(originalHtml)
+            }
+            document.replaceChild(originalHtml, document.children[0]);
+        })
     }
 
     export function executeFile(filePath:string) {
@@ -317,14 +333,9 @@ export namespace content {
         scriptTag.type = "text/javascript";
 
         if (!document.head) {
-            observer(document, mutation => {
-                if (mutation.target.nodeName === 'HEAD') {
-                    mutation.target.appendChild(scriptTag)
-                    return true // end listening
-                }
-            })
-        }
-        return document.head.appendChild(scriptTag);
+            interceptDocumentLoad(html => html.querySelector('head').insertAdjacentElement('afterbegin', scriptTag))
+        } else
+            document.head.appendChild(scriptTag);
     }
 
     export function executeScript(scriptContent:string) {
@@ -332,15 +343,10 @@ export namespace content {
         scriptTag.type = "text/javascript";
         scriptTag.textContent = scriptContent
 
-        // TODO extract common function with executeFile
         if (!document.head) {
-            observer(document, mutation => {
-                if (mutation.target.nodeName === 'HEAD') {
-                    mutation.target.appendChild(scriptTag)
-                }
-            })
-        }
-        return document.head.appendChild(scriptTag);
+            interceptDocumentLoad(html => html.querySelector('head').insertAdjacentElement('afterbegin', scriptTag))
+        } else
+            document.head.appendChild(scriptTag);
     }
 }
 
