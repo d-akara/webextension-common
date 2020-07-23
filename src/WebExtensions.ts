@@ -47,6 +47,7 @@ export type EventSource = {
 export interface ExtensionMessage {
     event:string,
     content?:Object
+    origin?:string
 }
 
 export interface ExtensionMessageResponse {
@@ -68,7 +69,7 @@ namespace memoryStorage {
         })
     }
     export function memSet(item: browser.storage.StorageObject) {
-        if (isBackground()) {
+        if (isExtensionPage()) {
             for (const key in item) {
                 valueStore.set(key, item[key])
             }
@@ -77,7 +78,7 @@ namespace memoryStorage {
         return sendMessageExtensionPages({event: 'webextension.store.setValue', content: item})
     }
     export function memGet(keys?: string|string[]|null): Promise<any> {
-        if (isBackground()) {
+        if (isExtensionPage()) {
             if (keys instanceof String)
                 return Promise.resolve(valueStore.get(keys))
             else {
@@ -96,7 +97,9 @@ export namespace background {
     export function startLogReceiver() {
         subscribeMessages('webextension.logger', event => {
             const content = event.content as LoggerMessage
-            console.log.apply(null, [content.loggerId + ':', ...content.messages])
+
+            console.log.apply(null, [{id: content.loggerId, origin: event.origin}, ...content.messages])
+            // console.log.apply(null, [content.loggerId + ':' + event.origin + ':', ...content.messages])
         })
     }
     export function startMessageProxy() {
@@ -109,6 +112,9 @@ export namespace background {
 }
 
 function _sendMessageActiveTab(message:ExtensionMessage) {
+    if (log) {
+        log.log('sendMessageActiveTab sending', message)
+    }
     return browser.tabs.query({ active: true, windowType:'normal' }).then((tabs) => {
         return browser.tabs.sendMessage(tabs[0].id, message)
     });
@@ -149,6 +155,14 @@ export async function sendMessageTabs(tabQuery: TabQuery, message:ExtensionMessa
     }
     return response
     
+}
+
+export async function tabFromId(tabId: number) {
+    return await browser.tabs.get(tabId)
+}
+
+export function tabInfo(tab: browser.tabs.Tab) {
+    return {title: tab.title, url: tab.url}
 }
 
 export function sendMessageExtensionPages(message:ExtensionMessage) {
@@ -264,8 +278,17 @@ export interface LoggerMessage {
     messages:object[]
 }
 
-export function makeLogger(loggerId:string) {
-    if (isBackground()) {
+export interface Logger {
+    log: (...messages) => void
+}
+
+let log:Logger
+export function setLogger(logger: Logger) {
+    log = logger;
+}
+
+export function makeLogger(loggerId:string): Logger {
+    if (isExtensionPage()) {
         return {
             log: (...messages) => {
                 console.log.apply(this, [loggerId + ':', ...messages])
@@ -274,7 +297,7 @@ export function makeLogger(loggerId:string) {
     }
     return {
         log: (...messages) => {
-            const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}}
+            const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}, origin:document.location.toString()}
             sendMessageExtensionPages(extensionMessage)
         }
     }
@@ -367,7 +390,10 @@ export namespace storage {
     export const memGet = memoryStorage.memGet
 }
 
-function isBackground() {
+/**
+ * returns true for all pages except the content page
+ */
+function isExtensionPage() {
     if (!browser.extension.getBackgroundPage) return false // occurs in content script
     return browser.extension.getBackgroundPage() === window
 }
