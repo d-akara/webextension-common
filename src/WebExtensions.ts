@@ -309,6 +309,9 @@ export namespace devtools {
     }
 }
 
+/**
+ * functions specify to content script executed in extension context
+ */
 export namespace content {
 
     export function observe(targetNode, listenerFn: (mutation:MutationRecord) => boolean | void, observerConfig?: MutationObserverInit) {
@@ -361,6 +364,18 @@ export namespace content {
             document.head.appendChild(scriptTag);
     }
 
+    export function executeModule(filePath:string) {
+        const url = browser.runtime.getURL(filePath)
+        const scriptTag = document.createElement("script");
+        scriptTag.src = url;
+        scriptTag.type = "module";
+
+        if (!document.head) {
+            interceptDocumentLoad(html => html.querySelector('head').insertAdjacentElement('afterbegin', scriptTag))
+        } else
+            document.head.appendChild(scriptTag);
+    }
+
     export function executeScript(scriptContent:string) {
         const scriptTag = document.createElement("script");
         scriptTag.type = "text/javascript";
@@ -371,6 +386,53 @@ export namespace content {
         } else
             document.head.appendChild(scriptTag);
     }
+
+    export function sendMessageToPage(message:any) {
+        const target = window.location.protocol + '//' + window.location.host
+        window.postMessage({
+            direction: "from-content-script",
+            message: message
+          }, target);
+    }
+
+    export function registerPageListener(handler: (message:any) => void) {
+        window.addEventListener("message", (event) => {
+            if (event.source != window) return  // only handle if from self
+            const pageMessage:PageMessageEvent = event.data
+            if (pageMessage.direction == "from-page-script") {
+                handler(pageMessage.message)
+            }
+          });
+    }
+}
+interface PageMessageEvent {
+    direction: string
+    message: any
+}
+/**
+ * functions for use within page injection
+ */
+export namespace page {
+    export function registerExtensionListener(handler: (message:any) => void) {
+        window.addEventListener("message", (event) => {
+            if (event.source != window) return  // only handle if from self
+            const pageMessage:PageMessageEvent = event.data
+            if (pageMessage.direction == "from-content-script") {
+                handler(pageMessage.message)
+            }
+        });
+    }
+
+    /*
+    Send a message to the page script.
+    */
+   export function sendMessageToContentScript(message: string) {
+    const target = window.location.protocol + '//' + window.location.host
+    window.postMessage({
+        direction: "from-page-script",
+        message
+    }, target);
+}    
 }
 
 export namespace storage {
@@ -389,6 +451,15 @@ export namespace storage {
     export const memSet = memoryStorage.memSet
     export const memGet = memoryStorage.memGet
 }
+
+
+export async function fetchExtensionFile(extensionFileLocation: string) {
+    const fileUrl = browser.runtime.getURL(extensionFileLocation)
+    const result = await fetch(fileUrl)
+    const fileContent = await result.text()
+
+    return fileContent
+  }
 
 /**
  * returns true for all pages except the content page
