@@ -387,38 +387,39 @@ export namespace content {
             document.head.appendChild(scriptTag);
     }
 
-    export function sendMessageToPage(message:any) {
+    export function sendMessageToPage(message:PageMessageEvent) {
         const target = window.location.protocol + '//' + window.location.host
         window.postMessage({
+            ...message,
             direction: "from-content-script",
-            message: message
           }, target);
     }
 
-    export function registerPageListener(handler: (message:any) => void) {
+    export function subscribePageMessages(eventId: string, handler: (message:any) => void) {
         window.addEventListener("message", (event) => {
             if (event.source != window) return  // only handle if from self
             const pageMessage:PageMessageEvent = event.data
-            if (pageMessage.direction == "from-page-script") {
-                handler(pageMessage.message)
+            if ((pageMessage.direction == "from-page-script") && eventId === pageMessage.event) {
+                handler(pageMessage.content)
             }
           });
     }
 }
 interface PageMessageEvent {
-    direction: string
-    message: any
+    direction?: string
+    event:string
+    content: any
 }
 /**
  * functions for use within page injection
  */
 export namespace page {
-    export function registerExtensionListener(handler: (message:any) => void) {
+    export function subscribeExtensionMessages(eventId: string, handler: (message:any) => void) {
         window.addEventListener("message", (event) => {
             if (event.source != window) return  // only handle if from self
             const pageMessage:PageMessageEvent = event.data
-            if (pageMessage.direction == "from-content-script") {
-                handler(pageMessage.message)
+            if ((pageMessage.direction == "from-content-script") && eventId === pageMessage.event) {
+                handler(pageMessage.content)
             }
         });
     }
@@ -426,11 +427,11 @@ export namespace page {
     /*
     Send a message to the page script.
     */
-   export function sendMessageToContentScript(message: string) {
+   export function sendMessageToContentScript(message: PageMessageEvent) {
     const target = window.location.protocol + '//' + window.location.host
     window.postMessage({
-        direction: "from-page-script",
-        message
+        ...message,
+        direction: "from-page-script"
     }, target);
 }    
 }
