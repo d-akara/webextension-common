@@ -69,7 +69,7 @@ namespace memoryStorage {
         })
     }
     export function memSet(item: browser.storage.StorageObject) {
-        if (isExtensionPage()) {
+        if (isBackground()) {
             for (const key in item) {
                 valueStore.set(key, item[key])
             }
@@ -78,7 +78,7 @@ namespace memoryStorage {
         return sendMessageExtensionPages({event: 'webextension.store.setValue', content: item})
     }
     export function memGet(keys?: string|string[]|null): Promise<any> {
-        if (isExtensionPage()) {
+        if (isBackground()) {
             if (keys instanceof String)
                 return Promise.resolve(valueStore.get(keys))
             else {
@@ -127,6 +127,13 @@ export function sendMessageActiveTab(message:ExtensionMessage) {
         return _sendMessageActiveTab(message)
 }
 
+export function sendMessageParentTab(message:ExtensionMessage) {
+    // TODO get parent tab
+    return browser.tabs.query({ active: true, windowType:'normal' }).then((tabs) => {
+        return browser.tabs.sendMessage(tabs[0].id, message)
+    });
+}
+
 export interface TabQuery {
     active?: boolean,
     audible?: boolean,
@@ -156,13 +163,25 @@ export async function sendMessageTabs(tabQuery: TabQuery, message:ExtensionMessa
     return response
     
 }
+interface PageMessageEvent {
+    direction?: string
+    event:string
+    content?: any
+}
+export function sendMessageToPage(message:PageMessageEvent) {
+    const target = window.location.protocol + '//' + window.location.host
+    window.postMessage({
+        ...message,
+        direction: "from-content-script",
+      }, target);
+}
 
 export async function tabFromId(tabId: number) {
     return await browser.tabs.get(tabId)
 }
 
 export function tabInfo(tab: browser.tabs.Tab) {
-    return {title: tab.title, url: tab.url}
+    return {title: tab.title, url: briefUrl(tab.url)}
 }
 
 export function sendMessageExtensionPages(message:ExtensionMessage) {
@@ -204,8 +223,70 @@ export function subscribeKeyCommandEvents(command:(command:string)=>void) {
     browser.commands.onCommand.addListener(command);
 }
 
-export function createWindow(url:string) {
-    return browser.windows.create({type:'popup',url})
+interface WindowCreation {
+    url?: string|string[]
+    tabId?: number
+    left?: number
+    top?: number
+    width?: number
+    height?: number
+    focused?: boolean,
+    incognito?: boolean
+    titlePreface?: string
+    type?: browser.windows.CreateType
+    state?: browser.windows.WindowState
+}
+
+interface TabCreation {
+    active?: boolean
+    cookieStoreId?: string
+    index?: number
+    openerTabId?: number
+    pinned?: boolean
+    url?: string
+    windowId?: number
+}
+
+interface WebNavigationEvent {
+    tabId: number
+    url: string
+    processId: number
+    frameId: number
+    timeStamp: number
+}
+type WebNavigationEventListener = (event:WebNavigationEvent) => void
+
+function listenOnCompletedOnce(tabId: number, listener:WebNavigationEventListener) {
+    const selfRemovingListener:WebNavigationEventListener = event => {
+        if (event.tabId !== tabId) return
+        listener(event)
+        browser.webNavigation.onCompleted.removeListener(selfRemovingListener)
+    }
+    browser.webNavigation.onCompleted.addListener(selfRemovingListener)
+}
+
+export async function createWindow(window: WindowCreation) {
+    const newWindow = await browser.windows.create({type:'popup', ...window})
+    const tabId = newWindow.tabs[0].id
+    const listener:WebNavigationEventListener = async event => {
+        const creationMessage:ExtensionMessage = {event:'webextension.tab.create', content:{tabId}}
+        await browser.tabs.sendMessage(tabId, creationMessage)
+    }
+    listenOnCompletedOnce(tabId, listener)
+
+    return newWindow
+}
+
+export async function createTab(tab: TabCreation) {
+    const newTab = await browser.tabs.create(tab)
+    const tabId = newTab.id
+    const listener:WebNavigationEventListener = async event => {
+        const creationMessage:ExtensionMessage = {event:'webextension.tab.create', content:{tabId}}
+        await browser.tabs.sendMessage(tabId, creationMessage)
+    }
+    listenOnCompletedOnce(tabId, listener)
+
+    return newTab
 }
 
 export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
@@ -288,16 +369,16 @@ export function setLogger(logger: Logger) {
 }
 
 export function makeLogger(loggerId:string): Logger {
-    if (isExtensionPage()) {
+    if (isBackground()) {
         return {
             log: (...messages) => {
-                console.log.apply(this, [loggerId + ':', ...messages])
+                console.log.apply(this, [{id: loggerId}, ...messages])
             }
         }
     }
     return {
         log: (...messages) => {
-            const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}, origin:document.location.toString()}
+            const extensionMessage = {event:'webextension.logger', content: {loggerId, messages}, origin:briefUrl(document.location.toString(), 2)}
             sendMessageExtensionPages(extensionMessage)
         }
     }
@@ -313,6 +394,16 @@ export namespace devtools {
  * functions specify to content script executed in extension context
  */
 export namespace content {
+
+    export function subscribePageMessages(eventId: string, handler: (message:any) => void) {
+        window.addEventListener("message", (event) => {
+            if (event.source != window) return  // only handle if from self
+            const pageMessage:PageMessageEvent = event.data
+            if ((pageMessage.direction == "from-page-script") && eventId === pageMessage.event) {
+                handler(pageMessage.content)
+            }
+          });
+    }
 
     export function observe(targetNode, listenerFn: (mutation:MutationRecord) => boolean | void, observerConfig?: MutationObserverInit) {
         const config = observerConfig || {
@@ -386,30 +477,8 @@ export namespace content {
         } else
             document.head.appendChild(scriptTag);
     }
-
-    export function sendMessageToPage(message:PageMessageEvent) {
-        const target = window.location.protocol + '//' + window.location.host
-        window.postMessage({
-            ...message,
-            direction: "from-content-script",
-          }, target);
-    }
-
-    export function subscribePageMessages(eventId: string, handler: (message:any) => void) {
-        window.addEventListener("message", (event) => {
-            if (event.source != window) return  // only handle if from self
-            const pageMessage:PageMessageEvent = event.data
-            if ((pageMessage.direction == "from-page-script") && eventId === pageMessage.event) {
-                handler(pageMessage.content)
-            }
-          });
-    }
 }
-interface PageMessageEvent {
-    direction?: string
-    event:string
-    content: any
-}
+
 /**
  * functions for use within page injection
  */
@@ -460,14 +529,30 @@ export async function fetchExtensionFile(extensionFileLocation: string) {
     const fileContent = await result.text()
 
     return fileContent
-  }
+}
 
 /**
- * returns true for all pages except the content page
+ * returns true for all pages except the background page
  */
-function isExtensionPage() {
+function isBackground() {
     if (!browser.extension.getBackgroundPage) return false // occurs in content script
     return browser.extension.getBackgroundPage() === window
 }
 
 function isDevtools() {return browser.devtools ? true:false}
+
+/**
+ * Trimmed version of url with host and n number segments from the end
+ * @param url 
+ * @param count 
+ */
+function briefUrl(url:string, count:number = 2) {
+    const uri = new URL(url)
+    const segments = url.split('/')
+    const last = segments.length - 1
+    const first = Math.max(0, last - 1)
+    const endSegments = segments.splice(first, last).join('/')
+    if (uri.protocol === 'moz-extension:')
+        return uri.protocol + '...' + endSegments
+    return uri.hostname + '...' + endSegments
+}
