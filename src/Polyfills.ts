@@ -7,7 +7,7 @@ export interface Window {
     msBrowser?: typeof browser;
 }
 declare var window:Window;
-window['browser'] =  window.msBrowser || window.browser || window.chrome;
+window['browser'] = polyfill
 
 console.log('webextension-polyfill: polyfills installed - %c%s', 'color:green', document.location.toString(), polyfill);  // note. we must reference polyfill or it will not be imported and included
 

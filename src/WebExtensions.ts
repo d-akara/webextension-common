@@ -122,6 +122,11 @@ function _sendMessageActiveTab(message:ExtensionMessage) {
 
 export function sendMessageActiveTab(message:ExtensionMessage) {
     if (isDevtools()) {  // devtools in firefox doesn't have access to tabs, so we must proxy through the background
+        const tabId = browser.devtools.inspectedWindow.tabId
+        if (!tabId) {
+            console.log('no tabId for inspected window', browser.devtools.inspectedWindow)
+            return Promise.reject('no tabId')
+        }
         return sendMessageExtensionPages({event:'webextension.proxy.sendMessageActiveTab', content: {tabId: browser.devtools.inspectedWindow.tabId, message}})
     } else
         return _sendMessageActiveTab(message)
@@ -247,46 +252,58 @@ interface TabCreation {
     windowId?: number
 }
 
-interface WebNavigationEvent {
-    tabId: number
-    url: string
-    processId: number
-    frameId: number
-    timeStamp: number
-}
-type WebNavigationEventListener = (event:WebNavigationEvent) => void
+type TabUpdatedListener = (tabId: number, changeInfo: {
+    audible?: boolean,
+    discarded?: boolean,
+    favIconUrl?: string,
+    mutedInfo?: browser.tabs.MutedInfo,
+    pinned?: boolean,
+    status?: string,
+    title?: string,
+    url?: string,
+}, tab: browser.tabs.Tab) => void
 
-function listenOnCompletedOnce(tabId: number, listener:WebNavigationEventListener) {
-    const selfRemovingListener:WebNavigationEventListener = event => {
-        if (event.tabId !== tabId) return
-        listener(event)
-        browser.webNavigation.onCompleted.removeListener(selfRemovingListener)
+
+// browser.tabs.onUpdated.addListener((id, changeInfo, tab)
+// seems to be the only listener that on chrome can be used to get status of tabs that we open with our extension
+function listenOnCompletedOnce(tabId: number, listener:() => void) {
+    const selfRemovingListener:TabUpdatedListener = (eventTabId, changeInfo, tab) => {
+        if (tabId !== eventTabId) return
+        if (changeInfo.status !== 'complete') return
+
+        listener()
+        browser.tabs.onUpdated.removeListener(selfRemovingListener)
     }
-    browser.webNavigation.onCompleted.addListener(selfRemovingListener)
+    browser.tabs.onUpdated.addListener(selfRemovingListener)
 }
 
+export const EVENT_ID_TAB_CREATE = 'webextension.tab.create'
 export async function createWindow(window: WindowCreation) {
     const newWindow = await browser.windows.create({type:'popup', ...window})
     const tabId = newWindow.tabs[0].id
-    const listener:WebNavigationEventListener = async event => {
-        const creationMessage:ExtensionMessage = {event:'webextension.tab.create', content:{tabId}}
+    const creationMessage:ExtensionMessage = {event:EVENT_ID_TAB_CREATE, content:{tabId}}
+    const windowReady = makeDeferred<browser.windows.Window>()
+    const listener = async () => {
         await browser.tabs.sendMessage(tabId, creationMessage)
+        windowReady.resolve(newWindow)
     }
     listenOnCompletedOnce(tabId, listener)
 
-    return newWindow
+    return windowReady
 }
 
 export async function createTab(tab: TabCreation) {
     const newTab = await browser.tabs.create(tab)
     const tabId = newTab.id
-    const listener:WebNavigationEventListener = async event => {
-        const creationMessage:ExtensionMessage = {event:'webextension.tab.create', content:{tabId}}
+    const tabReady = makeDeferred<browser.tabs.Tab>()
+    const listener = async () => {
+        const creationMessage:ExtensionMessage = {event:EVENT_ID_TAB_CREATE, content:{tabId}}
         await browser.tabs.sendMessage(tabId, creationMessage)
+        tabReady.resolve(newTab)
     }
     listenOnCompletedOnce(tabId, listener)
 
-    return newTab
+    return tabReady
 }
 
 export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
@@ -555,4 +572,22 @@ function briefUrl(url:string, count:number = 2) {
     if (uri.protocol === 'moz-extension:')
         return uri.protocol + '...' + endSegments
     return uri.hostname + '...' + endSegments
+}
+
+interface DeferredPromise<T> extends Promise<T> {
+    resolve: (value?: T) => void
+    reject: (reason?: any) => void
+}
+
+function makeDeferred<T>():DeferredPromise<T> {
+    const deferred = {} as DeferredPromise<T>
+    const promise = new Promise<T>((resolve, reject) => {
+        deferred.resolve = resolve
+        deferred.reject  = reject
+    })
+    deferred.then = (value) => promise.then(value)
+    deferred.catch = (reason) => promise.catch(reason)
+    deferred.finally = () => promise.finally()
+
+    return deferred
 }
