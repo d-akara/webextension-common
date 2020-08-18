@@ -263,47 +263,40 @@ type TabUpdatedListener = (tabId: number, changeInfo: {
     url?: string,
 }, tab: browser.tabs.Tab) => void
 
-
 // browser.tabs.onUpdated.addListener((id, changeInfo, tab)
 // seems to be the only listener that on chrome can be used to get status of tabs that we open with our extension
-function listenOnCompletedOnce(tabId: number, listener:() => void) {
+async function listenOnCompletedOnce<T>(tabId: number, listener:() => T) {
+    const completed = makeDeferred<T>()
     const selfRemovingListener:TabUpdatedListener = (eventTabId, changeInfo, tab) => {
         if (tabId !== eventTabId) return
         if (changeInfo.status !== 'complete') return
 
-        listener()
+        completed.resolve(listener())
         browser.tabs.onUpdated.removeListener(selfRemovingListener)
     }
     browser.tabs.onUpdated.addListener(selfRemovingListener)
+    return completed
 }
 
 export const EVENT_ID_TAB_CREATE = 'webextension.tab.create'
 export async function createWindow(window: WindowCreation) {
     const newWindow = await browser.windows.create({type:'popup', ...window})
     const tabId = newWindow.tabs[0].id
-    const creationMessage:ExtensionMessage = {event:EVENT_ID_TAB_CREATE, content:{tabId}}
-    const windowReady = makeDeferred<browser.windows.Window>()
-    const listener = async () => {
+    return listenOnCompletedOnce(tabId, async () => {
+        const creationMessage:ExtensionMessage = {event:EVENT_ID_TAB_CREATE, content:{tabId}}
         await browser.tabs.sendMessage(tabId, creationMessage)
-        windowReady.resolve(newWindow)
-    }
-    listenOnCompletedOnce(tabId, listener)
-
-    return windowReady
+        return newWindow
+    })
 }
 
 export async function createTab(tab: TabCreation) {
     const newTab = await browser.tabs.create(tab)
     const tabId = newTab.id
-    const tabReady = makeDeferred<browser.tabs.Tab>()
-    const listener = async () => {
+    return listenOnCompletedOnce(tabId, async () => {
         const creationMessage:ExtensionMessage = {event:EVENT_ID_TAB_CREATE, content:{tabId}}
         await browser.tabs.sendMessage(tabId, creationMessage)
-        tabReady.resolve(newTab)
-    }
-    listenOnCompletedOnce(tabId, listener)
-
-    return tabReady
+        return newTab
+    })
 }
 
 export function listenContentLoaded(onContentLoaded:(arg:EventSource)=>void) {
@@ -546,6 +539,10 @@ export async function fetchExtensionFile(extensionFileLocation: string) {
     const fileContent = await result.text()
 
     return fileContent
+}
+
+export function extensionUrl(localPath:string) {
+    return browser.runtime.getURL(localPath)
 }
 
 /**
