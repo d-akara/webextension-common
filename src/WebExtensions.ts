@@ -588,3 +588,72 @@ function makeDeferred<T>():DeferredPromise<T> {
 
     return deferred
 }
+
+export enum PageType {
+    action = 'action',
+    background = '_generated_background_page.html',
+    content = 'content',
+    devtools = 'devtools',
+    devtoolsPanel = 'devtools-panel',
+    options = 'options'
+}
+
+function pageContext() {
+    const pageType = new URL(window.location.href).searchParams.get('page')
+    const path = window.location.pathname
+    const isExtensionPage = window.location.protocol.includes('extension')
+    
+
+    if (isExtensionPage) {
+        if (pageType === PageType.action) {
+            return PageType.action;
+        }
+        if (path.endsWith(PageType.background)) {
+            return PageType.background;
+        }
+        if (pageType === PageType.devtools) {
+            return PageType.devtools;
+        }
+        if (pageType === PageType.devtoolsPanel) {
+            return PageType.devtoolsPanel;
+        }
+        if (pageType === PageType.options) {
+            return PageType.options;
+        }
+    }
+
+    // The content page location will be whatever is the current browser page the user is browsing.
+    return PageType.content;
+}
+
+interface ExtensionModule {
+    id: string
+    page: PageType
+    onInit: (log:Logger)=> void
+}
+
+export function initModule(module: ExtensionModule) {
+    const currentPageType = pageContext();
+
+    if (currentPageType === PageType.background && module.page === PageType.background) {
+        console.log('initializing background processes')
+        // start background processes
+        background.startLogReceiver()
+        background.startMemoryStorage()
+        background.startMessageProxy()
+    }
+
+    if (module.page === currentPageType) {
+        try {
+            const log = makeLogger(module.id)
+            setLogger(log)
+            log.log('executing module')
+            module.onInit(log)
+            log.log('module initialized')
+        
+        } catch (error) {
+            console.log(error)
+            log.log(error.toString())
+        }
+    }
+}
